@@ -6,13 +6,16 @@ import com.emirhanbaran.bookingservice.dto.BookingRequest;
 import com.emirhanbaran.bookingservice.dto.BookingResponse;
 import com.emirhanbaran.bookingservice.entity.Booking;
 import com.emirhanbaran.bookingservice.entity.BookingStatus;
+import com.emirhanbaran.bookingservice.entity.OutboxBooking;
 import com.emirhanbaran.bookingservice.mapper.BookingMapper;
 import com.emirhanbaran.bookingservice.repository.BookingRepository;
+import com.emirhanbaran.bookingservice.repository.OutboxBookingRepository;
 import feign.FeignException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -23,6 +26,8 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final BookingMapper bookingMapper;
     private final EventServiceClient eventServiceClient;
+    private final ObjectMapper objectMapper;
+    private final OutboxBookingRepository outboxBookingRepository;
 
     @Transactional
     public BookingResponse createBooking(BookingRequest request) {
@@ -48,6 +53,16 @@ public class BookingService {
                 .eventId(request.eventId())
                 .status(BookingStatus.CONFIRMED)
                 .build();
+
+        // 4. Save to Outbox (Same Transaction)
+        OutboxBooking outbox = OutboxBooking.builder()
+                .aggregateType("BOOKING")
+                .aggregateId(booking.getId())
+                .type("BOOKING_CONFIRMED") // Since we set status to CONFIRMED immediately
+                .payload(objectMapper.writeValueAsString(booking))
+                .build();
+
+        outboxBookingRepository.save(outbox);
 
         Booking savedBooking = bookingRepository.save(booking);
 
