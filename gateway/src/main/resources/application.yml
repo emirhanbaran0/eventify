@@ -30,6 +30,12 @@ spring:
                 - Path=/api/bookings/**
               filters:
                 - RewritePath=/api/(?<segment>.*), /$\{segment}
+            - id: search-service
+              uri: http://localhost:8084
+              predicates:
+                  - Path=/api/search/**
+              filters:
+                  - RewritePath=/api/(?<segment>.*), /$\{segment}
 
 management:
   endpoints:
