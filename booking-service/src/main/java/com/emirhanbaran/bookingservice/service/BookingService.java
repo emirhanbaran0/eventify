@@ -79,6 +79,16 @@ public class BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
         booking.setStatus(BookingStatus.CONFIRMED);
+
+        OutboxBooking outbox = OutboxBooking.builder()
+                .aggregateType("BOOKING")
+                .aggregateId(booking.getId())
+                .type("BOOKING_CONFIRMED")
+                .payload(objectMapper.writeValueAsString(booking))
+                .build();
+
+        outboxBookingRepository.save(outbox);
+
         bookingRepository.save(booking);
     }
 
