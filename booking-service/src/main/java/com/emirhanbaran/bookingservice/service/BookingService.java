@@ -31,7 +31,7 @@ public class BookingService {
 
     @Transactional
     public BookingResponse createBooking(BookingRequest request) {
-        // 1. Call Event Service to get event details (Synchronous)
+
         ExternalEventDto event;
         try {
             event = eventServiceClient.getEventById(request.eventId());
@@ -39,32 +39,23 @@ public class BookingService {
             throw new EntityNotFoundException("Event not found with id: " + request.eventId());
         }
 
-        // 2. Check Capacity
-        // We count how many CONFIRMED bookings exist for this event
-        Integer currentBookings = bookingRepository.countByEventIdAndStatus(request.eventId(), BookingStatus.CONFIRMED);
 
-        if (currentBookings >= event.capacity()) {
-            throw new IllegalStateException("Event is fully booked!");
-        }
-
-        // 3. Save Booking as CONFIRMED (Simple version for now)
         Booking booking = Booking.builder()
                 .userId(request.userId())
                 .eventId(request.eventId())
-                .status(BookingStatus.CONFIRMED)
+                .status(BookingStatus.PENDING)
                 .build();
 
-        // 4. Save to Outbox (Same Transaction)
+        Booking savedBooking = bookingRepository.save(booking);
+
         OutboxBooking outbox = OutboxBooking.builder()
                 .aggregateType("BOOKING")
                 .aggregateId(booking.getId())
-                .type("BOOKING_CONFIRMED") // Since we set status to CONFIRMED immediately
+                .type("BOOKING_CREATED")
                 .payload(objectMapper.writeValueAsString(booking))
                 .build();
 
         outboxBookingRepository.save(outbox);
-
-        Booking savedBooking = bookingRepository.save(booking);
 
         return bookingMapper.toResponse(savedBooking);
     }
@@ -83,4 +74,31 @@ public class BookingService {
                 .map(bookingMapper::toResponse)
                 .toList();
     }
+
+    public void confirmBooking(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+        booking.setStatus(BookingStatus.CONFIRMED);
+        bookingRepository.save(booking);
+    }
+
+    @Transactional
+    public void cancelBooking(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new EntityNotFoundException("Booking not found with id: " + bookingId));
+        booking.setStatus(BookingStatus.CANCELLED);
+
+        OutboxBooking outbox = OutboxBooking.builder()
+                .aggregateType("BOOKING")
+                .aggregateId(booking.getId())
+                .type("BOOKING_FAILED")
+                .payload(objectMapper.writeValueAsString(booking))
+                .build();
+
+        outboxBookingRepository.save(outbox);
+
+        bookingRepository.save(booking);
+    }
+
+
 }
